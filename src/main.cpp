@@ -58,7 +58,6 @@ void setup()
 {
   Serial.begin(115200);
 
-  //Wire.begin(0, 26); // SDA, SCL for M5StickC
   M5.begin();
 
   M5.Lcd.setRotation(3);
@@ -188,6 +187,7 @@ void sendSensor()
   #ifdef SGP30
   float temperature = readTemperature();
   doc["temperature"] = temperature;
+  float humidity = temperature;
   doc["humidity"] = temperature;
   #else
   float temperature = readTemperature();
@@ -251,7 +251,7 @@ void sendSensor()
   M5.Lcd.setCursor(10, 10);
   M5.Lcd.print("Temp: ");
   M5.Lcd.print(temperature);
-  M5.Lcd.println(" °C");
+  M5.Lcd.println(" degC");
   M5.Lcd.print("Humidity: ");
   M5.Lcd.print(humidity);
   M5.Lcd.println(" g/kg");
