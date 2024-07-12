@@ -3,6 +3,9 @@
 // Enable debug info from IoT library
 // #define ENABLE_IOT_DEBUG
 
+//#define SGP30
+
+
 // Libraries
 #include <Arduino.h>
 #include <ArduinoJson.h>
@@ -16,7 +19,14 @@
 #include <ctype.h> // for tolower
 
 #include <M5Unified.h>
+#ifdef SGP30
 #include <Adafruit_SGP30.h>
+Adafruit_SGP30 sgp;
+#else
+#include <M5Unified.h>
+#include "M5UnitENV.h"
+SHT3X sht3x;
+#endif
 
 String shadowSubscribeTopic = "";
 String shadowPublishTopic = "";
@@ -33,13 +43,14 @@ void connectWiFi();
 void connectAWS();
 void messageHandlerIoT(String &topic, String &payload);
 
+void initialiseSensor();
 void sendSensor();
-float readSensor();
+float readTemperature();
+float readHumidity();
 
 WiFiClientSecure net = WiFiClientSecure();
 MQTTClient client = MQTTClient(bufferSize);
 
-Adafruit_SGP30 sgp;
 unsigned long lastRead = 0;
 unsigned long lastPublish = 0;
 
@@ -58,18 +69,7 @@ void setup()
 
   M5.Lcd.println("Starting");
 
-  // begin SGP30
-  if (! sgp.begin()){
-    Serial.println("Sensor not found :(");
-    while (1);
-  }
-  Serial.print("Found SGP30 serial #");
-  Serial.print(sgp.serialnumber[0], HEX);
-  Serial.print(sgp.serialnumber[1], HEX);
-  Serial.println(sgp.serialnumber[2], HEX);
-
-  M5.Lcd.println("SGP30 initialized");
-  delay(1000);
+  initialiseSensor();
 
   connectWiFi();
   M5.Lcd.println("WiFi connected");
@@ -181,21 +181,21 @@ void messageHandlerIoT(String &topic, String &payload)
   }
 }
 
-float readSensor()
-{
-  if (! sgp.IAQmeasure()) {
-    Serial.println("Measurement failed");
-    return -1.0;
-  }
-  return sgp.eCO2;
-}
-
 void sendSensor()
 {
   // Send current button state
   StaticJsonDocument<200> doc;
-  float reading = readSensor();
-  doc["state"]["reported"]["reading"] = reading;
+  #ifdef SGP30
+  float temperature = readTemperature();
+  doc["temperature"] = temperature;
+  doc["humidity"] = temperature;
+  #else
+  float temperature = readTemperature();
+  doc["temperature"] = temperature;
+  float humidity = readHumidity();
+  doc["humidity"] = humidity;
+  #endif
+  
   String payload;
   serializeJson(doc, payload);
 
@@ -249,9 +249,67 @@ void sendSensor()
 
   M5.Lcd.fillScreen(WHITE);
   M5.Lcd.setCursor(10, 10);
-  M5.Lcd.print("CO2: ");
-  M5.Lcd.print(reading);
-  M5.Lcd.println(" ppm");
+  M5.Lcd.print("Temp: ");
+  M5.Lcd.print(temperature);
+  M5.Lcd.println(" °C");
+  M5.Lcd.print("Humidity: ");
+  M5.Lcd.print(humidity);
+  M5.Lcd.println(" g/kg");
 
   M5.update();
+}
+
+void initialiseSensor() {
+  #ifdef SGP30
+  // begin SGP30
+  if (! sgp.begin()){
+    Serial.println("Sensor not found :(");
+    while (1);
+  }
+  Serial.print("Found SGP30 serial #");
+  Serial.print(sgp.serialnumber[0], HEX);
+  Serial.print(sgp.serialnumber[1], HEX);
+  Serial.println(sgp.serialnumber[2], HEX);
+
+  M5.Lcd.println("SGP30 initialized");
+  delay(1000);
+  #else
+  if (!sht3x.begin(&Wire, SHT3X_I2C_ADDR, 0, 26, 400000U)) {
+      M5.Lcd.println("Sensor not found");
+      while (1) {
+        Serial.println("Couldn't find sensor");
+        delay(1000);
+      }
+  }
+  #endif
+}
+
+
+float readTemperature()
+{
+  #ifdef SGP30
+  if (! sgp.IAQmeasure()) {
+    Serial.println("Measurement failed");
+    return -1.0;
+  }
+  return sgp.eCO2;
+  #else
+  if (sht3x.update()) {
+    return sht3x.cTemp;
+  }
+  return -1.0;
+  #endif
+}
+
+
+float readHumidity()
+{
+  #ifdef SGP30
+  return 100.0;
+  #else
+  if (sht3x.update()) {
+    return sht3x.humidity;
+  }
+  return -1.0;
+  #endif
 }
